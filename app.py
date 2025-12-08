@@ -51,16 +51,16 @@ CONFIG = {
         'search_term': 'grn',
         'attachment_filter': 'GRN',
         'days_back': 7,
-        'max_results': 1000
+        'max_results': 2
     },
     'sheet': {
         'llama_api_key': '',  # Will be set from environment
         'llama_agent': 'More retail Agent',
         'drive_folder_id': '1C251csI1oOeX_skv7mfqpZB0NbyLLd9d',
         'spreadsheet_id': '16y9DAK2tVHgnZNnPeRoSSPPE2NcspW_qqMF8ZR8OOC0',
-        'sheet_range': 'mrgrn',
+        'sheet_range': 'test',
         'days_back': 7,
-        'max_files': 1000
+        'max_files': 2
     },
     'workflow_log': {
         'spreadsheet_id': '16y9DAK2tVHgnZNnPeRoSSPPE2NcspW_qqMF8ZR8OOC0',
