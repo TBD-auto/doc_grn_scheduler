@@ -951,9 +951,11 @@ class DocAutomation:
             
             # Define expected columns based on your sheet
             expected_columns = [
-                "grndate", "source_file", "processed_date", "supplier", "uom",
-                "variant.ean", "hsn_code", "ord.qty", "po_number", "tax amount",
-                "shipping_address", "sku", "drive_file_id"
+                "item_description", "vendor_invoice_number", "rcv_qty", "grn_date", 
+                "source_file", "processed_date", "supplier", "uom", "variant_ean", 
+                "hsn_code", "ord_qty", "po_number", "tax_amount", "shipping_address", 
+                "sku", "unit_cost", "tax_percentage", "drive_file_id", "mrp", 
+                "net_value", "grndate", "variant.ean", "ord.qty", "tax amount"
             ]
             
             # Ensure headers are set correctly
