@@ -783,30 +783,25 @@ class DocAutomation:
         """Process extracted data for More Retail DOCS to match sheet structure"""
         rows = []
         
-        # First, debug what we got
+        # Debug what we got
         self.log(f"[DEBUG] Processing extracted data for {file_info['name']}")
         self.log(f"[DEBUG] Available keys: {list(extracted_data.keys())}")
         
-        # Check if we have items directly or need to look elsewhere
-        items = []
-        items_key = None
-        
         # Look for items in different possible keys
-        for possible_key in ["items", "product_items", "line_items", "products", "grn_items"]:
+        items = []
+        for possible_key in ["items", "product_items", "line_items", "products", "grn_items", "line_items"]:
             if possible_key in extracted_data:
                 items_data = extracted_data[possible_key]
                 if isinstance(items_data, list):
                     items = items_data
-                    items_key = possible_key
                     self.log(f"[DEBUG] Found {len(items)} items in key '{possible_key}'")
                     break
         
-        # If no items found, check if the data itself is a list of items
+        # If no items found, check if the data itself is a list
         if not items and isinstance(extracted_data, list):
             items = extracted_data
-            self.log(f"[DEBUG] Data is a list with {len(items)} potential items")
         
-        # If still no items, try to create a single row from the main data
+        # If still no items, create single row
         if not items:
             self.log(f"[DEBUG] No items list found, creating single row from main data")
             row = self.create_base_row(extracted_data, file_info)
@@ -814,42 +809,114 @@ class DocAutomation:
                 rows.append(row)
             return rows
         
+        # Extract document-level data (once for all items)
+        doc_data = {
+            "grn_date": extracted_data.get("grn_date", extracted_data.get("date", extracted_data.get("document_date", ""))),
+            "supplier": extracted_data.get("supplier", extracted_data.get("vendor_name", extracted_data.get("vendor", ""))),
+            "po_number": extracted_data.get("po_number", extracted_data.get("purchase_order_number", extracted_data.get("po_no", ""))),
+            "shipping_address": extracted_data.get("shipping_address", extracted_data.get("delivery_address", extracted_data.get("address", ""))),
+            "vendor_invoice_number": extracted_data.get("vendor_invoice_number", extracted_data.get("invoice_number", extracted_data.get("invoice_no", "")))
+        }
+        
         # Process each item
         for i, item in enumerate(items):
             if not isinstance(item, dict):
                 self.log(f"[DEBUG] Item {i} is not a dict, skipping")
                 continue
             
-            # Extract data with multiple possible field names
+            # Create comprehensive row with ALL possible fields
             row = {
-                "grndate": extracted_data.get("grn_date", extracted_data.get("grn_date", "")),
+                # Document-level fields
+                "grn_date": doc_data["grn_date"],
+                "grndate": doc_data["grn_date"],  # Duplicate for compatibility
                 "source_file": file_info['name'],
                 "processed_date": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "supplier": extracted_data.get("supplier", extracted_data.get("vendor_name", "")),
-                "uom": item.get("uom", item.get("unit_of_measure", item.get("unit", ""))),
-                "variant.ean": item.get("variant.ean", item.get("ean", item.get("barcode", ""))),
-                "hsn_code": item.get("hsn_code", item.get("hsn", item.get("tax_code", ""))),
-                "ord.qty": item.get("ord.qty", item.get("ordered_quantity", item.get("quantity", item.get("qty", "")))),
-                "po_number": extracted_data.get("po_number", extracted_data.get("purchase_order_number", "")),
-                "tax amount": item.get("tax_amount", item.get("tax", item.get("tax_amount", ""))),
-                "shipping_address": extracted_data.get("shipping_address", extracted_data.get("delivery_address", "")),
-                "sku": item.get("sku", item.get("sku_code", item.get("item_code", ""))),
-                "drive_file_id": file_info['id']
+                "supplier": doc_data["supplier"],
+                "po_number": doc_data["po_number"],
+                "shipping_address": doc_data["shipping_address"],
+                "vendor_invoice_number": doc_data["vendor_invoice_number"],
+                "drive_file_id": file_info['id'],
+                
+                # Item-level fields with multiple fallback names
+                "item_description": item.get("item_description", 
+                                           item.get("description", 
+                                           item.get("product_description", 
+                                           item.get("product_name", "")))),
+                
+                "rcv_qty": item.get("rcv_qty", 
+                                  item.get("received_quantity", 
+                                  item.get("received_qty", ""))),
+                
+                "ord_qty": item.get("ord_qty", 
+                                  item.get("ordered_quantity", 
+                                  item.get("ordered_qty", 
+                                  item.get("quantity", 
+                                  item.get("qty", ""))))),
+                "ord.qty": item.get("ord.qty", 
+                                  item.get("ord_qty", 
+                                  item.get("ordered_quantity", ""))),  # Alternate column name
+                
+                "uom": item.get("uom", 
+                              item.get("unit_of_measure", 
+                              item.get("unit", ""))),
+                
+                "sku": item.get("sku", 
+                              item.get("sku_code", 
+                              item.get("item_code", ""))),
+                
+                "variant_ean": item.get("variant_ean", 
+                                       item.get("ean", 
+                                       item.get("barcode", ""))),
+                "variant.ean": item.get("variant.ean", 
+                                       item.get("ean", 
+                                       item.get("barcode", ""))),  # Alternate column name
+                
+                "hsn_code": item.get("hsn_code", 
+                                   item.get("hsn", 
+                                   item.get("tax_code", ""))),
+                
+                "unit_cost": item.get("unit_cost", 
+                                    item.get("unit_price", 
+                                    item.get("price_per_unit", 
+                                    item.get("rate", "")))),
+                
+                "tax_amount": item.get("tax_amount", 
+                                     item.get("tax", "")),
+                "tax amount": item.get("tax amount", 
+                                     item.get("tax_amount", 
+                                     item.get("tax", ""))),  # Alternate column name
+                
+                "tax_percentage": item.get("tax_percentage", 
+                                         item.get("tax_percent", 
+                                         item.get("tax_rate", ""))),
+                
+                "mrp": item.get("mrp", 
+                              item.get("maximum_retail_price", 
+                              item.get("retail_price", ""))),
+                
+                "net_value": item.get("net_value", 
+                                    item.get("net_amount", 
+                                    item.get("total_amount", 
+                                    item.get("amount", ""))))
             }
             
-            # Clean up values
+            # Clean up values - convert everything to string and strip
             cleaned_row = {}
             for key, value in row.items():
                 if value is None:
                     value = ""
-                # Convert to string and strip whitespace
-                cleaned_row[key] = str(value).strip() if value != "" else ""
+                # Convert to string, handle numbers properly
+                if isinstance(value, (int, float)):
+                    cleaned_row[key] = str(value)
+                else:
+                    cleaned_row[key] = str(value).strip() if value != "" else ""
             
             rows.append(cleaned_row)
             
             # Log first item for debugging
             if i == 0:
-                self.log(f"[DEBUG] First row sample: {dict(list(cleaned_row.items())[:5])}")
+                self.log(f"[DEBUG] First row created with {len(cleaned_row)} fields")
+                self.log(f"[DEBUG] Sample fields: {dict(list(cleaned_row.items())[:8])}")
         
         self.log(f"[DEBUG] Created {len(rows)} rows from {len(items)} items")
         return rows
@@ -857,40 +924,41 @@ class DocAutomation:
     def create_base_row(self, extracted_data: Dict, file_info: Dict) -> Dict:
         """Create a base row when no items are found"""
         row = {
-            "grndate": extracted_data.get("grn_date", extracted_data.get("grn_date", "")),
+            "grn_date": extracted_data.get("grn_date", extracted_data.get("date", "")),
+            "grndate": extracted_data.get("grn_date", extracted_data.get("date", "")),
             "source_file": file_info['name'],
             "processed_date": time.strftime("%Y-%m-%d %H:%M:%S"),
             "supplier": extracted_data.get("supplier", extracted_data.get("vendor_name", "")),
-            "uom": "",
-            "variant.ean": "",
-            "hsn_code": "",
-            "ord.qty": "",
             "po_number": extracted_data.get("po_number", extracted_data.get("purchase_order_number", "")),
-            "tax amount": "",
             "shipping_address": extracted_data.get("shipping_address", extracted_data.get("delivery_address", "")),
-            "sku": "",
-            "drive_file_id": file_info['id']
+            "vendor_invoice_number": extracted_data.get("vendor_invoice_number", extracted_data.get("invoice_number", "")),
+            "drive_file_id": file_info['id'],
+            "item_description": extracted_data.get("item_description", ""),
+            "rcv_qty": extracted_data.get("rcv_qty", ""),
+            "ord_qty": extracted_data.get("ord_qty", extracted_data.get("quantity", "")),
+            "ord.qty": extracted_data.get("ord_qty", ""),
+            "uom": extracted_data.get("uom", ""),
+            "sku": extracted_data.get("sku", ""),
+            "variant_ean": extracted_data.get("ean", ""),
+            "variant.ean": extracted_data.get("ean", ""),
+            "hsn_code": extracted_data.get("hsn_code", ""),
+            "unit_cost": extracted_data.get("unit_cost", ""),
+            "tax_amount": extracted_data.get("tax_amount", ""),
+            "tax amount": extracted_data.get("tax_amount", ""),
+            "tax_percentage": extracted_data.get("tax_percentage", ""),
+            "mrp": extracted_data.get("mrp", ""),
+            "net_value": extracted_data.get("net_value", "")
         }
-        
-        # Try to get item data from top-level if available
-        for key in ["sku", "ean", "hsn_code", "quantity"]:
-            if key in extracted_data:
-                value = extracted_data[key]
-                if key == "sku":
-                    row["sku"] = value
-                elif key == "ean":
-                    row["variant.ean"] = value
-                elif key == "hsn_code":
-                    row["hsn_code"] = value
-                elif key == "quantity":
-                    row["ord.qty"] = value
         
         # Clean the row
         cleaned_row = {}
         for key, value in row.items():
             if value is None:
                 value = ""
-            cleaned_row[key] = str(value).strip() if value != "" else ""
+            if isinstance(value, (int, float)):
+                cleaned_row[key] = str(value)
+            else:
+                cleaned_row[key] = str(value).strip() if value != "" else ""
         
         return cleaned_row
     
