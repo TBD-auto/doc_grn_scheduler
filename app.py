@@ -68,7 +68,7 @@ CONFIG = {
     },
     'notifications': {
         'recipients': ['keyur@thebakersdozen.in'],
-        'sender_email': ''  # Will be auto-populated from authenticated user
+        'sender_email': 'sneha.p@thebakersdozen.in'  # Will be auto-populated from authenticated user
     },
     'credentials_path': 'credentials.json',
     'token_path': 'token.json'
