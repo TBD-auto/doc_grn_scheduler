@@ -51,16 +51,16 @@ CONFIG = {
         'search_term': 'grn',
         'attachment_filter': 'GRN',
         'days_back': 7,
-        'max_results': 2
+        'max_results': 1000
     },
     'sheet': {
         'llama_api_key': '',  # Will be set from environment
         'llama_agent': 'More retail Agent',
         'drive_folder_id': '1C251csI1oOeX_skv7mfqpZB0NbyLLd9d',
         'spreadsheet_id': '16y9DAK2tVHgnZNnPeRoSSPPE2NcspW_qqMF8ZR8OOC0',
-        'sheet_range': 'test',
+        'sheet_range': 'mrgrn',
         'days_back': 7,
-        'max_files': 2
+        'max_files': 1000
     },
     'workflow_log': {
         'spreadsheet_id': '16y9DAK2tVHgnZNnPeRoSSPPE2NcspW_qqMF8ZR8OOC0',
@@ -732,56 +732,167 @@ class DocAutomation:
                 time.sleep(wait_time)
         raise Exception(f"Extraction failed after {retries} attempts for {file_path}")
     
+    def debug_extraction_result(self, extraction_result, filename: str):
+        """Debug helper to see what's being extracted"""
+        self.log(f"\n[DEBUG] Extraction result for {filename}:")
+        self.log(f"Type: {type(extraction_result)}")
+        
+        if hasattr(extraction_result, 'data'):
+            data = extraction_result.data
+            self.log(f"Has .data attribute: True")
+        else:
+            data = extraction_result
+            self.log(f"Has .data attribute: False")
+        
+        if isinstance(data, dict):
+            self.log(f"Keys in data: {list(data.keys())}")
+            
+            # Check for items
+            for key in ["items", "product_items", "line_items", "products", "grn_items"]:
+                if key in data:
+                    items = data[key]
+                    if isinstance(items, list):
+                        self.log(f"Found '{key}' with {len(items)} items")
+                        if items and isinstance(items[0], dict):
+                            self.log(f"First item keys: {list(items[0].keys())}")
+                    else:
+                        self.log(f"Found '{key}' but it's not a list: {type(items)}")
+            
+            # Log sample values
+            for key in ["grn_date", "po_number", "supplier", "shipping_address"]:
+                if key in data:
+                    self.log(f"{key}: {data[key][:100] if isinstance(data[key], str) else data[key]}")
+                    
+        elif isinstance(data, list):
+            self.log(f"Data is a list with {len(data)} elements")
+            if data:
+                if isinstance(data[0], dict):
+                    self.log(f"First element keys: {list(data[0].keys())}")
+                    # Check for items in first element
+                    for key in ["items", "product_items", "line_items", "products", "grn_items"]:
+                        if key in data[0]:
+                            items = data[0][key]
+                            if isinstance(items, list):
+                                self.log(f"Found '{key}' in first element with {len(items)} items")
+                else:
+                    self.log(f"First element type: {type(data[0])}")
+        
+        self.log("[DEBUG] End of extraction debug\n")
+    
     def process_extracted_data(self, extracted_data: Dict, file_info: Dict) -> List[Dict]:
-        """Process extracted data for More Retail DOCS"""
+        """Process extracted data for More Retail DOCS to match sheet structure"""
         rows = []
+        
+        # First, debug what we got
+        self.log(f"[DEBUG] Processing extracted data for {file_info['name']}")
+        self.log(f"[DEBUG] Available keys: {list(extracted_data.keys())}")
+        
+        # Check if we have items directly or need to look elsewhere
         items = []
+        items_key = None
         
-        # Try multiple possible keys for items
-        for possible_key in ["items", "product_items", "line_items", "products"]:
+        # Look for items in different possible keys
+        for possible_key in ["items", "product_items", "line_items", "products", "grn_items"]:
             if possible_key in extracted_data:
-                items = extracted_data.get(possible_key, [])
-                break
+                items_data = extracted_data[possible_key]
+                if isinstance(items_data, list):
+                    items = items_data
+                    items_key = possible_key
+                    self.log(f"[DEBUG] Found {len(items)} items in key '{possible_key}'")
+                    break
         
+        # If no items found, check if the data itself is a list of items
+        if not items and isinstance(extracted_data, list):
+            items = extracted_data
+            self.log(f"[DEBUG] Data is a list with {len(items)} potential items")
+        
+        # If still no items, try to create a single row from the main data
         if not items:
-            self.log(f"[WARNING] No items found in {file_info['name']}")
+            self.log(f"[DEBUG] No items list found, creating single row from main data")
+            row = self.create_base_row(extracted_data, file_info)
+            if row:
+                rows.append(row)
             return rows
         
-        # Extract base document-level information for DOC
-        row_base = {
-            "grn_date": extracted_data.get("grn_date", ""),
-            "po_number": extracted_data.get("po_number", ""),
-            "vendor_invoice_number": extracted_data.get("vendor_invoice_number", ""),
-            "supplier": extracted_data.get("supplier", ""),
-            "shipping_address": extracted_data.get("shipping_address", ""),
+        # Process each item
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                self.log(f"[DEBUG] Item {i} is not a dict, skipping")
+                continue
+            
+            # Extract data with multiple possible field names
+            row = {
+                "grndate": extracted_data.get("grn_date", extracted_data.get("grn_date", "")),
+                "source_file": file_info['name'],
+                "processed_date": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "supplier": extracted_data.get("supplier", extracted_data.get("vendor_name", "")),
+                "uom": item.get("uom", item.get("unit_of_measure", item.get("unit", ""))),
+                "variant.ean": item.get("variant.ean", item.get("ean", item.get("barcode", ""))),
+                "hsn_code": item.get("hsn_code", item.get("hsn", item.get("tax_code", ""))),
+                "ord.qty": item.get("ord.qty", item.get("ordered_quantity", item.get("quantity", item.get("qty", "")))),
+                "po_number": extracted_data.get("po_number", extracted_data.get("purchase_order_number", "")),
+                "tax amount": item.get("tax_amount", item.get("tax", item.get("tax_amount", ""))),
+                "shipping_address": extracted_data.get("shipping_address", extracted_data.get("delivery_address", "")),
+                "sku": item.get("sku", item.get("sku_code", item.get("item_code", ""))),
+                "drive_file_id": file_info['id']
+            }
+            
+            # Clean up values
+            cleaned_row = {}
+            for key, value in row.items():
+                if value is None:
+                    value = ""
+                # Convert to string and strip whitespace
+                cleaned_row[key] = str(value).strip() if value != "" else ""
+            
+            rows.append(cleaned_row)
+            
+            # Log first item for debugging
+            if i == 0:
+                self.log(f"[DEBUG] First row sample: {dict(list(cleaned_row.items())[:5])}")
+        
+        self.log(f"[DEBUG] Created {len(rows)} rows from {len(items)} items")
+        return rows
+    
+    def create_base_row(self, extracted_data: Dict, file_info: Dict) -> Dict:
+        """Create a base row when no items are found"""
+        row = {
+            "grndate": extracted_data.get("grn_date", extracted_data.get("grn_date", "")),
             "source_file": file_info['name'],
             "processed_date": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "supplier": extracted_data.get("supplier", extracted_data.get("vendor_name", "")),
+            "uom": "",
+            "variant.ean": "",
+            "hsn_code": "",
+            "ord.qty": "",
+            "po_number": extracted_data.get("po_number", extracted_data.get("purchase_order_number", "")),
+            "tax amount": "",
+            "shipping_address": extracted_data.get("shipping_address", extracted_data.get("delivery_address", "")),
+            "sku": "",
             "drive_file_id": file_info['id']
         }
         
-        # Process each item
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-                
-            row = row_base.copy()
-            row.update({
-                "sku": item.get("sku", ""),
-                "description": item.get("description", ""),
-                "quantity": item.get("quantity", item.get("qty", "")),
-                "rate": item.get("rate", item.get("unit_price", "")),
-                "amount": item.get("amount", item.get("total", "")),
-                "uom": item.get("uom", ""),
-                "batch_no": item.get("batch_no", item.get("lot_no", "")),
-                "expiry_date": item.get("expiry_date", ""),
-                "mrp": item.get("mrp", item.get("lot_mrp", ""))
-            })
-            
-            # Clean up the row (remove empty values)
-            cleaned_row = {k: v for k, v in row.items() if v not in ["", None]}
-            rows.append(cleaned_row)
+        # Try to get item data from top-level if available
+        for key in ["sku", "ean", "hsn_code", "quantity"]:
+            if key in extracted_data:
+                value = extracted_data[key]
+                if key == "sku":
+                    row["sku"] = value
+                elif key == "ean":
+                    row["variant.ean"] = value
+                elif key == "hsn_code":
+                    row["hsn_code"] = value
+                elif key == "quantity":
+                    row["ord.qty"] = value
         
-        return rows
+        # Clean the row
+        cleaned_row = {}
+        for key, value in row.items():
+            if value is None:
+                value = ""
+            cleaned_row[key] = str(value).strip() if value != "" else ""
+        
+        return cleaned_row
     
     def process_drive_to_sheet_workflow(self, config: dict, skip_existing: bool = True) -> Dict:
         """Process Drive to Sheet workflow for DOC platform"""
@@ -809,7 +920,7 @@ class DocAutomation:
                 self.log(f"[ERROR] Could not find agent '{config['llama_agent']}'. Check dashboard.")
                 return stats
             
-            self.log("LlamaParse agent found")
+            self.log("LlamaParse agent found", "SUCCESS")
             
             sheet_name = config['sheet_range'].split('!')[0] if '!' in config['sheet_range'] else config['sheet_range']
             
@@ -838,8 +949,28 @@ class DocAutomation:
             
             self.log(f"Found {len(pdf_files)} PDF files to process")
             
+            # Define expected columns based on your sheet
+            expected_columns = [
+                "grndate", "source_file", "processed_date", "supplier", "uom",
+                "variant.ean", "hsn_code", "ord.qty", "po_number", "tax amount",
+                "shipping_address", "sku", "drive_file_id"
+            ]
+            
+            # Ensure headers are set correctly
             headers = self.get_sheet_headers(config['spreadsheet_id'], sheet_name)
-            headers_set = False
+            if not headers:
+                # Write the expected headers
+                self.update_headers(config['spreadsheet_id'], sheet_name, expected_columns)
+                headers = expected_columns
+            else:
+                # Check if we need to add missing columns
+                missing_columns = [col for col in expected_columns if col not in headers]
+                if missing_columns:
+                    new_headers = headers + missing_columns
+                    self.update_headers(config['spreadsheet_id'], sheet_name, new_headers)
+                    headers = new_headers
+            
+            self.log(f"[SHEETS] Using headers: {headers}")
 
             for pdf_file in pdf_files:
                 try:
@@ -858,12 +989,16 @@ class DocAutomation:
                     try:
                         extraction_result = self.safe_extract(agent, tmp_path)
                         
+                        # Debug the extraction result
+                        self.debug_extraction_result(extraction_result, pdf_file['name'])
+                        
                         # Handle extraction result
                         extracted_data = extraction_result.data if hasattr(extraction_result, 'data') else extraction_result
                         
+                        all_rows = []
+                        
                         if isinstance(extracted_data, list):
                             # Process multiple pages/chunks
-                            all_rows = []
                             for chunk in extracted_data:
                                 if isinstance(chunk, dict):
                                     chunk_rows = self.process_extracted_data(chunk, pdf_file)
@@ -877,43 +1012,40 @@ class DocAutomation:
                             stats['files_failed'] += 1
                             continue
                         
-                        if not headers_set:
-                            all_keys = set()
-                            for row in all_rows:
-                                all_keys.update(row.keys())
-                            
-                            new_headers = sorted(list(all_keys))
-                            
-                            if headers:
-                                combined = list(dict.fromkeys(headers + new_headers))
-                                if combined != headers:
-                                    self.update_headers(config['spreadsheet_id'], sheet_name, combined)
-                                    headers = combined
-                            else:
-                                self.update_headers(config['spreadsheet_id'], sheet_name, new_headers)
-                                headers = new_headers
-                            
-                            headers_set = True
+                        self.log(f"[DEBUG] Created {len(all_rows)} rows for {pdf_file['name']}")
                         
+                        # Prepare rows for Google Sheets
                         sheet_rows = []
                         for row_dict in all_rows:
-                            row_values = [row_dict.get(h, "") for h in headers]
+                            row_values = []
+                            for header in headers:
+                                # Get value or empty string if not found
+                                value = row_dict.get(header, "")
+                                # Convert to string if not already
+                                if value is None:
+                                    value = ""
+                                row_values.append(str(value).strip())
                             sheet_rows.append(row_values)
                         
-                        if self.append_to_google_sheet(config['spreadsheet_id'], config['sheet_range'], sheet_rows):
-                            stats['rows_added'] += len(sheet_rows)
-                            stats['files_processed'] += 1
-                            self.log(f"[SUCCESS] Processed {pdf_file['name']}: {len(sheet_rows)} rows added")
+                        if sheet_rows:
+                            # Append to Google Sheet
+                            if self.append_to_google_sheet(config['spreadsheet_id'], config['sheet_range'], sheet_rows):
+                                stats['rows_added'] += len(sheet_rows)
+                                stats['files_processed'] += 1
+                                self.log(f"[SUCCESS] Processed {pdf_file['name']}: {len(sheet_rows)} rows added")
+                            else:
+                                stats['files_failed'] += 1
+                                self.log(f"[ERROR] Failed to append data for {pdf_file['name']}")
                         else:
                             stats['files_failed'] += 1
-                            self.log(f"[ERROR] Failed to append data for {pdf_file['name']}")
+                            self.log(f"[ERROR] No rows to append for {pdf_file['name']}")
                     
                     finally:
                         if os.path.exists(tmp_path):
                             os.remove(tmp_path)
                 
                 except Exception as e:
-                    self.log(f"[ERROR] Failed to process {pdf_file.get('name', 'unknown')}: {str(e)}")
+                    self.log(f"[ERROR] Failed to process {pdf_file.get('name', 'unknown')}: {str(e)}", "ERROR")
                     stats['files_failed'] += 1
             
             # Update stats
