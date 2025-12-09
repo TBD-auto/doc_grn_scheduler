@@ -460,19 +460,14 @@ class DocAutomation:
                 
                 file_data = base64.urlsafe_b64decode(att["data"].encode("UTF-8"))
                 
-                search_folder_name = search_term if search_term else "all-attachments"
-                file_type_folder = self.classify_extension(filename)
-                
-                search_folder_id = self.create_drive_folder(search_folder_name, base_folder_id)
-                type_folder_id = self.create_drive_folder(file_type_folder, search_folder_id)
-                
+                # Skip folder creation and upload directly to the provided folder
                 clean_filename = self.sanitize_filename(filename)
                 
-                success = self.upload_to_drive(file_data, clean_filename, type_folder_id)
+                success = self.upload_to_drive(file_data, clean_filename, base_folder_id)
                 
                 if success:
                     stats['success'] += 1
-                    self.log(f"[SUCCESS] Processed attachment: {filename}")
+                    self.log(f"[SUCCESS] Uploaded attachment directly to folder: {filename}")
                 else:
                     stats['failed'] += 1
                 
@@ -510,10 +505,11 @@ class DocAutomation:
                     'upload_failed': 0
                 }
             
-            base_folder_name = "Gmail_Attachments"
-            base_folder_id = self.create_drive_folder(base_folder_name, config.get('gdrive_folder_id'))
+            # Use the provided folder ID directly (no extra folder creation)
+            base_folder_id = config.get('gdrive_folder_id')
+            
             if not base_folder_id:
-                self.log("[ERROR] Failed to create base folder in Google Drive")
+                self.log("[ERROR] No Google Drive folder ID provided in config")
                 return {
                     'success': False, 
                     'emails_checked': len(emails),
@@ -522,6 +518,8 @@ class DocAutomation:
                     'attachments_uploaded': 0,
                     'upload_failed': 0
                 }
+            
+            self.log(f"[PROCESS] Using provided Google Drive folder ID: {base_folder_id}")
             
             total_stats = {
                 'total_attachments': 0,
