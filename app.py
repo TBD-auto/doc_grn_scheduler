@@ -49,7 +49,7 @@ CONFIG = {
         'gdrive_folder_id': '1gZoNjdGarwMD5-Ci3uoqjNZZ8bTNyVoy',
         'sender': 'docs@more.in',
         'search_term': 'grn',
-        'attachment_filter': ',
+        'attachment_filter': '',
         'days_back': 7,
         'max_results': 1000
     },
