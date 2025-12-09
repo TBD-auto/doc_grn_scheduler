@@ -46,7 +46,7 @@ logging.basicConfig(
 # Hardcoded configuration for DOC platform
 CONFIG = {
     'mail': {
-        'gdrive_folder_id': '1gZoNjdGarwMD5-Ci3uoqjNZZ8bTNyVoy',
+        'gdrive_folder_id': '1C251csI1oOeX_skv7mfqpZB0NbyLLd9d',
         'sender': 'docs@more.in',
         'search_term': 'grn',
         'attachment_filter': '',
