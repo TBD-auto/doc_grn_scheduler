@@ -536,6 +536,19 @@ class DocAutomation:
                     if not sender_info:
                         continue
                     
+                    # **FIX: Check if email subject contains GRN (not GDN)**
+                    subject = sender_info.get('subject', '').upper()
+                    
+                    # Skip if subject contains GDN
+                    if 'GDN' in subject:
+                        self.log(f"[SKIPPED] Email with GDN subject: {subject[:50]}")
+                        continue
+                    
+                    # Only process if subject contains GRN
+                    if 'GRN' not in subject:
+                        self.log(f"[SKIPPED] Email does not contain GRN in subject: {subject[:50]}")
+                        continue
+                    
                     message = self.gmail_service.users().messages().get(
                         userId='me', id=email['id']
                     ).execute()
@@ -553,8 +566,8 @@ class DocAutomation:
                     total_stats['skipped_attachments'] += attachment_stats['skipped']
                     total_stats['failed_uploads'] += attachment_stats['failed']
                     
-                    subject = sender_info.get('subject', 'No Subject')[:50]
-                    self.log(f"[PROCESS] Email: {subject} - Success: {attachment_stats['success']}, Skipped: {attachment_stats['skipped']}, Failed: {attachment_stats['failed']}")
+                    subject_display = sender_info.get('subject', 'No Subject')[:50]
+                    self.log(f"[PROCESS] Email: {subject_display} - Success: {attachment_stats['success']}, Skipped: {attachment_stats['skipped']}, Failed: {attachment_stats['failed']}")
                     
                 except Exception as e:
                     self.log(f"[ERROR] Failed to process email {email.get('id', 'unknown')}: {str(e)}")
